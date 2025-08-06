@@ -80,19 +80,12 @@ constructPathways <- function(settings, andromeda) {
         eraCollapseSize = settings$eraCollapseSize
       )
   
-      if (settings$combinationWindow > 0) {
-        doCombinationWindow(
-          andromeda = andromeda,
-          combinationWindow = settings$combinationWindow,
-          minPostCombinationDuration = settings$minPostCombinationDuration
-        )
+      doCombinationWindow(
+        andromeda = andromeda,
+        combinationWindow = settings$combinationWindow,
+        minPostCombinationDuration = settings$minPostCombinationDuration
+      )
         
-        # Re-run era collapse after combinations to handle newly adjacent same events
-        doEraCollapse(
-          andromeda = andromeda,
-          eraCollapseSize = settings$eraCollapseSize
-        )
-      }
   
       doFilterTreatments(
         andromeda = andromeda,
