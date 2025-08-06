@@ -86,7 +86,16 @@ constructPathways <- function(settings, andromeda) {
         minPostCombinationDuration = settings$minPostCombinationDuration
       )
         
-  
+      # Check data state before doFilterTreatments
+      debug_data <- andromeda$treatmentHistory %>%
+      dplyr::filter(.data$personId %in% c(1, 2, 3)) %>%  # Look at first few patients
+      dplyr::arrange(.data$personId, .data$eventStartDate) %>%
+      dplyr::select(personId, eventCohortId, eventStartDate, eventEndDate) %>%
+      dplyr::collect()
+
+      print("Data before doFilterTreatments:")
+      print(debug_data)
+      
       doFilterTreatments(
         andromeda = andromeda,
         filterTreatments = settings$filterTreatments
@@ -712,8 +721,9 @@ selectRowsCombinationWindow <- function(andromeda) {
 doFilterTreatments <- function(andromeda, filterTreatments) {
   andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
     dbplyr::window_order(.data$personId, .data$eventStartDate, .data$eventEndDate)
-
+  
   if (filterTreatments != "All") {
+    # [Keep the existing code for handling combinations - lines with Andromeda version check]
     if (utils::packageVersion("Andromeda") >= package_version("1.0.0")) {
       andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
         dplyr::mutate(
@@ -722,6 +732,7 @@ doFilterTreatments <- function(andromeda, filterTreatments) {
           )
         )
     } else {
+      # [Keep existing combination handling code]
       combi <- grep(
         pattern = "+",
         x = andromeda$treatmentHistory %>%
@@ -751,43 +762,27 @@ doFilterTreatments <- function(andromeda, filterTreatments) {
       }
     }
   }
-
+  
   if (filterTreatments == "First") {
     andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
       dplyr::group_by(.data$personId, .data$eventCohortId) %>%
       dplyr::filter(dplyr::row_number() == 1) %>%
       dplyr::ungroup()
   } else if (filterTreatments == "Changes") {
-    # Group all rows per person for which previous treatment is same
-    if (package_version("1.0.0") >= utils::packageVersion("Andromeda")) {
-      andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
-        dplyr::group_by(.data$personId, .data$targetCohortId, .data$age, .data$sex, .data$indexYear, .data$eventCohortId, .data$sortOrder) %>%
-        dplyr::summarise(
-          eventStartDate = min(.data$eventStartDate, na.rm = TRUE),
-          eventEndDate = max(.data$eventEndDate, na.rm = TRUE),
-          durationEra = sum(.data$durationEra, na.rm = TRUE),
-          sortOrder = .data$sortOrder,
-          .groups = "drop"
-        )
-    } else {
-      # Group all rows per person for which previous treatment is same
-      andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
-        dplyr::collect() %>%
-        dplyr::mutate(group = dplyr::consecutive_id(.data$personId, .data$eventCohortId))
-      
-      # Remove all rows with same sequential treatments
-      andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
-        dplyr::group_by(.data$personId, .data$targetCohortId, .data$age, .data$sex, .data$indexYear, .data$eventCohortId, .data$group, .data$sortOrder) %>%
-        dplyr::summarise(
-          eventStartDate = min(.data$eventStartDate, na.rm = TRUE),
-          eventEndDate = max(.data$eventEndDate, na.rm = TRUE),
-          durationEra = sum(.data$durationEra, na.rm = TRUE),
-          .groups = "drop"
-        ) %>%
-        dplyr::arrange(.data$personId, .data$indexYear, .data$group) %>%
-        dplyr::select(-"group")
-    }
+    # REPLACE THIS ENTIRE SECTION with the new approach:
+    andromeda$treatmentHistory <- andromeda$treatmentHistory %>%
+      dplyr::group_by(.data$personId) %>%
+      dplyr::arrange(.data$eventStartDate) %>%
+      dplyr::mutate(
+        prev_event = dplyr::lag(.data$eventCohortId),
+        is_new = is.na(prev_event) | .data$eventCohortId != prev_event
+      ) %>%
+      dplyr::filter(is_new) %>%
+      dplyr::select(-prev_event, -is_new) %>%
+      dplyr::ungroup()
   }
+  
+  # [Keep the rest of the function as is]
   attrCounts <- fetchAttritionCounts(andromeda, "treatmentHistory")
   appendAttrition(
     toAdd = data.frame(
